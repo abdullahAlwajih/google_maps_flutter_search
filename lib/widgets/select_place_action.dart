@@ -13,7 +13,7 @@ class SelectPlaceAction extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Row(
             children: <Widget>[
               Expanded(
@@ -25,7 +25,7 @@ class SelectPlaceAction extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward)
+              const Icon(Icons.check, color: Colors.green,)
             ],
           ),
         ),

@@ -1,4 +1,5 @@
-class LocalizationItem {
+class Messages {
+  String findYourLocation;
   String languageCode;
   String nearBy;
   String findingPlace;
@@ -7,7 +8,9 @@ class LocalizationItem {
   String tapToSelectLocation;
 
 
-  LocalizationItem({
+
+  Messages({
+    this.findYourLocation = 'Find your location',
     this.languageCode = 'en_us',
     this.nearBy = 'Nearby Places',
     this.findingPlace = 'Finding place...',

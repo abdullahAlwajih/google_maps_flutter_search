@@ -1,34 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:location/location.dart';
-import 'package:http/http.dart' as http;
 import 'package:google_maps_flutter_search/entities/entities.dart';
 import 'package:google_maps_flutter_search/entities/localization_item.dart';
 import 'package:google_maps_flutter_search/widgets/widgets.dart';
+import 'package:http/http.dart' as http;
 
 import '../uuid.dart';
 
-/// Place picker widget made with map widget from
-/// [google_maps_flutter](https://github.com/flutter/plugins/tree/master/packages/google_maps_flutter)
-/// and other API calls to [Google Places API](https://developers.google.com/places/web-service/intro)
-///
-/// API key provided should have `Maps SDK for Android`, `Maps SDK for iOS`
-/// and `Places API`  enabled for it
 class GoogleMapsFlutterSearch extends StatefulWidget {
-  /// API key generated from Google Cloud Console. You can get an API key
-  /// [here](https://cloud.google.com/maps-platform/)
   final String apiKey;
+  LatLng? displayLocation;
+  Messages? messages;
 
-  /// Location to be displayed when screen is showed. If this is set or not null, the
-  /// map does not pan to the user's current location.
-  final LatLng? displayLocation;
-  LocalizationItem? localizationItem;
-
-  GoogleMapsFlutterSearch(this.apiKey, {Key? key, this.displayLocation, this.localizationItem}) : super(key: key) {
-    localizationItem ??= LocalizationItem();
+  GoogleMapsFlutterSearch(this.apiKey,
+      {Key? key, this.displayLocation, this.messages})
+      : super(key: key) {
+    messages ??= Messages();
+    displayLocation ??= const LatLng(15.369445, 44.191006);
   }
 
   @override
@@ -37,8 +32,6 @@ class GoogleMapsFlutterSearch extends StatefulWidget {
 
 /// Place picker state
 class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
-  final Completer<GoogleMapController> mapController = Completer();
-
   /// Indicator for the selected location
   final Set<Marker> markers = {};
 
@@ -56,15 +49,26 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
   GlobalKey appBarKey = GlobalKey();
 
   bool hasSearchTerm = false;
+  bool isMove = false;
 
   String previousSearchTerm = '';
+
+  CameraPosition initCameraPosition() => CameraPosition(
+        target: widget.displayLocation ?? const LatLng(15.369445, 44.191006),
+        zoom: 6,
+      );
 
   // constructor
   GoogleMapsFlutterSearchState();
 
+  final Completer<GoogleMapController> mapController = Completer();
+  late GoogleMapController newGooGleMapController;
+
   void onMapCreated(GoogleMapController controller) {
     mapController.complete(controller);
-    moveToCurrentUserLocation();
+    newGooGleMapController = controller;
+
+    // moveToCurrentUserLocation();
   }
 
   @override
@@ -77,10 +81,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
   @override
   void initState() {
     super.initState();
-    markers.add(Marker(
-      position: widget.displayLocation ?? const LatLng(5.6037, 0.1870),
-      markerId: const MarkerId("selected-location"),
-    ));
+    _buildMarkerFromAssets();
   }
 
   @override
@@ -89,31 +90,109 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
     super.dispose();
   }
 
+  BitmapDescriptor? _locationIcon;
+
+  Future<Uint8List> getBytesFromAsset(String path, int width) async {
+    ByteData data = await rootBundle.load(path);
+    ui.Codec codec = await ui.instantiateImageCodec(data.buffer.asUint8List(), targetWidth: width);
+    ui.FrameInfo fi = await codec.getNextFrame();
+    return (await fi.image.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+  }
+
+  _buildMarkerFromAssets() async {
+    final Uint8List markerIcon = await getBytesFromAsset('assets/images/marker.png', 100);
+    _locationIcon =  BitmapDescriptor.fromBytes(markerIcon);
+    setState(() {});
+
+    markers.add(Marker(
+      position: widget.displayLocation!,
+      markerId: const MarkerId("selected-location"),
+      icon: _locationIcon!,
+    ));
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: PreferredSize(
         key: appBarKey,
-        title: SearchInput(searchPlace),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
+        preferredSize: const Size.fromHeight(52),
+        child: SearchInput(searchPlace, messages: widget.messages!,),
       ),
+
+      // AppBar(
+      //   backgroundColor: Colors.grey,
+      //   key: appBarKey,
+      //   // actions: [],
+      //   // leading: SizedBox(height: 0, width: 0,),
+      //   title: SearchInput(searchPlace),
+      //   centerTitle: true,
+      //   automaticallyImplyLeading: false,
+      // ),
       body: Column(
         children: <Widget>[
           Expanded(
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: widget.displayLocation ?? const LatLng(5.6037, 0.1870),
-                zoom: 15,
-              ),
-              myLocationButtonEnabled: true,
-              myLocationEnabled: true,
-              onMapCreated: onMapCreated,
-              onTap: (latLng) {
-                clearOverlay();
-                moveToLocation(latLng);
-              },
-              markers: markers,
+            flex: 2,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                GoogleMap(
+                  initialCameraPosition: initCameraPosition(),
+                  myLocationButtonEnabled: true,
+                  myLocationEnabled: true,
+                  onMapCreated: onMapCreated,
+                  onTap: (latLng) {
+                    clearOverlay();
+                    moveToLocation(latLng);
+                  },
+                  onCameraMove: (position) {
+                    widget.displayLocation = LatLng(
+                        position.target.latitude, position.target.longitude);
+                    setState(() => isMove = true);
+                  },
+                  onCameraIdle: () async {
+                    await Future.delayed(const Duration(milliseconds: 300))
+                        .then((value) {
+                      setState(() => isMove = false);
+                      // clearOverlay();
+                      moveToLocation(widget.displayLocation!, false);
+                    });
+                  },
+                  markers: markers,
+                ),
+                // Align(
+                //   alignment: const Alignment(0, -0.05),
+                //   child: !isMove
+                //         ?  Image.asset('assets/images/marker.gif', width: 50, height: 50,)
+                //       : SizedBox(
+                //     width: 50,
+                //     height: 50,
+                //     child: Column(
+                //       mainAxisAlignment: MainAxisAlignment.end,
+                //       children: [
+                //         Container(
+                //           width: 5,
+                //           height: 10,
+                //           decoration: BoxDecoration(
+                //               color: Theme.of(context).colorScheme.primary,
+                //               shape: BoxShape.circle),
+                //         )
+                //       ],
+                //     ),
+                //   ),
+                // ),
+                // Align(
+                //   alignment: const Alignment(-0.9, 0.9),
+                //   child: FloatingActionButton.small(
+                //     onPressed: () {},
+                //     backgroundColor: Theme.of(context).colorScheme.surface,
+                //     foregroundColor:
+                //         Theme.of(context).colorScheme.secondaryVariant,
+                //     child: const Icon(Icons.gps_fixed),
+                //   ),
+                // ),
+              ],
             ),
           ),
           if (!hasSearchTerm)
@@ -124,21 +203,23 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
                   SelectPlaceAction(
                       getLocationName(),
                       () => Navigator.of(context).pop(locationResult),
-                      widget.localizationItem!.tapToSelectLocation),
-                  const Divider(height: 8),
+                      widget.messages!.tapToSelectLocation),
+                  const Divider(height: 1),
                   Padding(
-                    child: Text(widget.localizationItem!.nearBy,
+                    child: Text(widget.messages!.nearBy,
                         style: const TextStyle(fontSize: 16)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   ),
                   Expanded(
                     child: ListView(
                       children: nearbyPlaces
                           .map((it) => NearbyPlaceItem(
-                              it, () => moveToLocation(it.latLng!)))
+                          it, () => moveToLocation(it.latLng!)))
                           .toList(),
                     ),
-                  ),
+                  )
+
                 ],
               ),
             ),
@@ -174,9 +255,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
 
     clearOverlay();
 
-    setState(() {
-      hasSearchTerm = place.isNotEmpty;
-    });
+    setState(() => hasSearchTerm = place.isNotEmpty);
 
     if (place.isEmpty) {
       return;
@@ -204,7 +283,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
                     child: CircularProgressIndicator(strokeWidth: 3)),
                 const SizedBox(width: 24),
                 Expanded(
-                    child: Text(widget.localizationItem!.findingPlace,
+                    child: Text(widget.messages!.findingPlace,
                         style: const TextStyle(fontSize: 16)))
               ],
             ),
@@ -226,11 +305,12 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
       var endpoint =
           "https://maps.googleapis.com/maps/api/place/autocomplete/json?"
           "key=${widget.apiKey}&"
-          "language=${widget.localizationItem!.languageCode}&"
+          "language=${widget.messages!.languageCode}&"
           "input={$place}&sessiontoken=$sessionToken";
 
       if (locationResult != null) {
-        endpoint += "&location=${locationResult!.latLng!.latitude}," "${locationResult!.latLng!.longitude}";
+        endpoint += "&location=${locationResult!.latLng!.latitude},"
+            "${locationResult!.latLng!.longitude}";
       }
 
       final response = await http.get(Uri.parse(endpoint));
@@ -251,7 +331,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
 
       if (predictions.isEmpty) {
         AutoCompleteItem aci = AutoCompleteItem();
-        aci.text = widget.localizationItem!.noResultsFound;
+        aci.text = widget.messages!.noResultsFound;
         aci.offset = 0;
         aci.length = 0;
 
@@ -263,7 +343,6 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
             ..text = t['description']
             ..offset = t['matched_substrings'][0]['offset']
             ..length = t['matched_substrings'][0]['length'];
-
           suggestions.add(RichSuggestion(aci, () {
             FocusScope.of(context).requestFocus(FocusNode());
             decodeAndSelectPlace(aci.id);
@@ -272,9 +351,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
       }
 
       displayAutoCompleteSuggestions(suggestions);
-    } catch (_) {
-
-    }
+    } catch (_) {}
   }
 
   /// To navigate to the selected place from the autocomplete list to the map,
@@ -285,7 +362,9 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
 
     try {
       final url = Uri.parse(
-          "https://maps.googleapis.com/maps/api/place/details/json?key=${widget.apiKey}&" "language=${widget.localizationItem!.languageCode}&" "placeid=$placeId");
+          "https://maps.googleapis.com/maps/api/place/details/json?key=${widget.apiKey}&"
+          "language=${widget.messages!.languageCode}&"
+          "placeid=$placeId");
 
       final response = await http.get(url);
 
@@ -300,6 +379,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
       }
 
       final location = responseJson['result']['geometry']['location'];
+
       moveToLocation(LatLng(location['lat'], location['lng']));
     } catch (e) {
       // print(e);
@@ -334,7 +414,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
   /// then the road name returned is used instead.
   String getLocationName() {
     if (locationResult == null) {
-      return widget.localizationItem!.unnamedLocation;
+      return widget.messages!.unnamedLocation;
     }
 
     for (NearbyPlace np in nearbyPlaces) {
@@ -354,7 +434,12 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
     setState(() {
       markers.clear();
       markers.add(
-          Marker(markerId: const MarkerId("selected-location"), position: latLng));
+        Marker(
+          markerId: const MarkerId("selected-location"),
+          position: latLng,
+          icon: _locationIcon!,
+        ),
+      );
     });
   }
 
@@ -364,7 +449,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
       final url = Uri.parse(
           "https://maps.googleapis.com/maps/api/place/nearbysearch/json?"
           "key=${widget.apiKey}&location=${latLng.latitude},${latLng.longitude}"
-          "&radius=150&language=${widget.localizationItem!.languageCode}");
+          "&radius=150&language=${widget.messages!.languageCode}");
 
       final response = await http.get(url);
 
@@ -406,7 +491,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
     try {
       final url = Uri.parse("https://maps.googleapis.com/maps/api/geocode/json?"
           "latlng=${latLng.latitude},${latLng.longitude}&"
-          "language=${widget.localizationItem!.languageCode}&"
+          "language=${widget.messages!.languageCode}&"
           "key=${widget.apiKey}");
 
       final response = await http.get(url);
@@ -434,6 +519,7 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
             subLocalityLevel1,
             subLocalityLevel2;
         bool isOnStreet = false;
+
         if (result['address_components'] is List<dynamic> &&
             result['address_components'].length != null &&
             result['address_components'].length > 0) {
@@ -504,33 +590,47 @@ class GoogleMapsFlutterSearchState extends State<GoogleMapsFlutterSearch> {
 
   /// Moves the camera to the provided location and updates other UI features to
   /// match the location.
-  void moveToLocation(LatLng latLng) {
-    mapController.future.then((controller) {
-      controller.animateCamera(
-        CameraUpdate.newCameraPosition(
-            CameraPosition(target: latLng, zoom: 15.0)),
-      );
-    });
+  void moveToLocation(LatLng latLng, [bool isAnimateCamera = true]) {
 
-    setMarker(latLng);
+    if(isAnimateCamera) {
 
-    reverseGeocodeLatLng(latLng);
+      mapController.future.then((controller) {
+        controller.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(target:latLng, zoom: 15.0),
+            ));
+      });
 
-    getNearbyPlaces(latLng);
-  }
+      reverseGeocodeLatLng(latLng);
 
-  void moveToCurrentUserLocation() {
-    if (widget.displayLocation != null) {
-      moveToLocation(widget.displayLocation!);
-      return;
     }
 
-    Location().getLocation().then((locationData) {
-      LatLng target = LatLng(locationData.latitude!, locationData.longitude!);
-      moveToLocation(target);
-    }).catchError((_) {
-      // TODO: Handle the exception here
-      // print(error);
-    });
+
+    setMarker(latLng);
+    getNearbyPlaces(latLng);
+
+
+
+
+
+
+
+
+
   }
+
+// void moveToCurrentUserLocation() {
+//   if (widget.displayLocation != null) {
+//     moveToLocation(widget.displayLocation!);
+//     return;
+//   }
+//
+//   Location().getLocation().then((locationData) {
+//     LatLng target = LatLng(locationData.latitude!, locationData.longitude!);
+//     moveToLocation(target);
+//   }).catchError((_) {
+//     // TODO: Handle the exception here
+//     // print(error);
+//   });
+// }
 }

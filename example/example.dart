@@ -16,15 +16,13 @@ class GoogleMapsFlutterSearchDemoState extends State<GoogleMapsFlutterSearchDemo
       body: Center(
         child: TextButton(
           child: const Text("Pick Delivery location"),
-          onPressed: () {
-            showPlacePicker();
-          },
+          onPressed: () => showGoogleMapsFlutterSearch(),
         ),
       ),
     );
   }
 
-  void showPlacePicker() async {
+  void showGoogleMapsFlutterSearch() async {
     LocationResult? result = await Navigator.of(context).push(
         MaterialPageRoute(builder: (context) => GoogleMapsFlutterSearch("YOUR API KEY")));
 
