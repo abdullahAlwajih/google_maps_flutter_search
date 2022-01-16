@@ -63,7 +63,7 @@ class SearchInputState extends State<SearchInput> {
     //               4 , 4, 4, 4),
     //           child:
     //           Theme(
-    //             data_provider: Theme.of(context)
+    //             providers: Theme.of(context)
     //                 .copyWith(primaryColor: Theme.of(context).colorScheme.primary),
     //             child: Stack(
     //               children: [

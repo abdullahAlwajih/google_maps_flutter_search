@@ -1,6 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Nearby place data_provider will be deserialized into this model.
+/// Nearby place providers will be deserialized into this model.
 class NearbyPlace {
   /// The human-readable name of the location provided. This value is provided
   /// for [LocationResult.name] when the user selects this nearby place.
